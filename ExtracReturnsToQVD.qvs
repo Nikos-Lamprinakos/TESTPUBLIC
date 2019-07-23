@@ -1,0 +1,654 @@
+SET ThousandSep=',';
+SET DecimalSep='.';
+SET MoneyThousandSep=',';
+SET MoneyDecimalSep='.';
+SET MoneyFormat='$#,##0.00;-$#,##0.00';
+SET TimeFormat='h:mm:ss TT';
+SET DateFormat='M/D/YYYY';
+SET TimestampFormat='M/D/YYYY h:mm:ss[.fff] TT';
+SET FirstWeekDay=6;
+SET BrokenWeeks=1;
+SET ReferenceDay=0;
+SET FirstMonthOfYear=1;
+SET CollationLocale='en-US';
+SET CreateSearchIndexOnReload=1;
+SET MonthNames='Jan;Feb;Mar;Apr;May;Jun;Jul;Aug;Sep;Oct;Nov;Dec';
+SET LongMonthNames='January;February;March;April;May;June;July;August;September;October;November;December';
+SET DayNames='Mon;Tue;Wed;Thu;Fri;Sat;Sun';
+SET LongDayNames='Monday;Tuesday;Wednesday;Thursday;Friday;Saturday;Sunday';
+SET NumericalAbbreviation='3:k;6:M;9:G;12:T;15:P;18:E;21:Z;24:Y;-3:m;-6:μ;-9:n;-12:p;-15:f;-18:a;-21:z;-24:y';
+
+
+
+LIB CONNECT TO 'DKCPHDWSQL01';
+
+
+//Define the environment (01_DEV, 02_TEST, 03_PROD)
+Set v_Environment = '01_DEV';
+
+// current year
+Let v_LoadYear = year(today(1));
+
+//Current YearMonth
+Let v_LoadYearMonth = Num(year(today(1)),'0000')&Num(month(today(1)),'00');
+
+//10 years ago
+Let v_LoadInitialYear = year(today(1));
+
+//10 years ago YearMoth
+Let v_LoadInitialYearMonth = Num(year(today(1)),'0000')&'01';
+
+//Reload N last months on every execution (e.g. last 3 months)
+Set v_ReloadNLastMonths = '3';
+
+
+SERVICEITEMTYPE:
+Load *;
+SQL 
+Select *
+from [BI_DW].[dim].[ServiceItemType];
+Store SERVICEITEMTYPE into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/SERVICEITEMTYPE/SERVICEITEMTYPE.qvd' (qvd);
+Call DataQualityLog('SERVICEITEMTYPE','SERVICEITEMTYPE','Id');
+
+Drop Table SERVICEITEMTYPE;
+
+
+
+ENTITY:
+Load *;
+SQL 
+Select *
+from [BI_DW].[dim].[DataSourceEntity];
+Store ENTITY into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/DATASOURCEENTITY/DATASOURCEENTITY.qvd' (qvd);
+Call DataQualityLog('ENTITY','DATASOURCEENTITY','DataSourceId');
+
+Drop Table ENTITY;
+
+
+TIMELINESS:
+Load *;
+SQL 
+Select *
+from [BI_DW].[dim].[Timeliness];
+Store TIMELINESS into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/TIMELINESS/TIMELINESS.qvd' (qvd);
+Call DataQualityLog('TIMELINESS','TIMELINESS','Id');
+
+Drop Table TIMELINESS;
+
+
+
+SYMPTOMS:
+Load *;
+SQL 
+Select *
+from [BI_DW].[dim].[GlobalReturn];
+Store SYMPTOMS into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/SYMPTOMS/SYMPTOMS.qvd' (qvd);
+Call DataQualityLog('SYMPTOMS','SYMPTOMS','Id');
+
+Drop Table SYMPTOMS;
+
+
+
+SYMPTOMGROUPNAME:
+Load *;
+SQL
+Select 
+	*
+  FROM [BI_DW].[dim].[GlobalReturnRootSubgroup];
+Store SYMPTOMGROUPNAME into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/SYMPTOMGROUPNAME/SYMPTOMGROUPNAME.qvd' (qvd);
+Call DataQualityLog('SYMPTOMGROUPNAME','SYMPTOMGROUPNAME','Id');
+
+Drop Table SYMPTOMGROUPNAME;
+
+
+LOCATION:
+Load *;
+SQL
+Select 
+	*
+    FROM [BI_DW].[dim].[Location];
+Store LOCATION into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/LOCATION/LOCATION.qvd' (qvd);
+Call DataQualityLog('LOCATION','LOCATION','Id');
+
+Drop Table LOCATION;
+
+
+SERIALNUMBERLOCATION:
+Load *;
+SQL
+Select 
+	*
+    FROM [BI_DW].[dim].[SerialNumberLocation];
+Store SERIALNUMBERLOCATION into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/SERIALNUMBERLOCATION/SERIALNUMBERLOCATION.qvd' (qvd);
+Call DataQualityLog('SERIALNUMBERLOCATION','SERIALNUMBERLOCATION','Id');
+
+Drop Table SERIALNUMBERLOCATION;
+
+
+
+
+SERVICENUMBER:
+Load *;
+SQL
+Select 
+	*
+    FROM [BI_DW].[dim].[ServiceNumber];
+Store SERVICENUMBER into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/SERVICENUMBER/SERVICENUMBER.qvd' (qvd);
+Call DataQualityLog('SERVICENUMBER','SERVICENUMBER','ID');
+
+Drop Table SERVICENUMBER;
+
+
+
+
+Let v_Dir = 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/RETURNGROUP';
+Let v_LoadLastYearMonth = Date(AddMonths(Today(1),-$(v_ReloadNLastMonths)),'YYYYMM');
+
+Call GetMissingFiles('$(v_Dir)','RETURNGROUP','$(v_LoadInitialYearMonth)','$(v_LoadLastYearMonth)','YYYYMM');
+
+For Each v_YearMonthMissing in FieldValueList('GetMissingFiles')
+
+  RETURNGROUP:
+  Load *;
+  SQL
+  Select
+  sigr.*
+  FROM [BI_DW].[bridge].[vw_ServiceItem_GlobalReturnRootSubgroup]  sigr
+  join [BI_DW].fact.ServiceItemADL si on si.id = sigr.[ServiceItem Id]
+  join [BI_DW].dim.date date on date.DATE_ID = si.[Service Shipment Date Id]
+
+  Where date.Year_Month = $(v_YearMonthMissing);
+
+  STORE  RETURNGROUP into '$(v_Dir)/RETURNGROUP_$(v_YearMonthMissing).qvd' (qvd);
+
+  Call DataQualityLog('RETURNGROUP','RETURNGROUP_$(v_YearMonthMissing)','Id');
+  Drop Table RETURNGROUP;
+
+Next v_YearMonthMissing;
+
+Drop Table GetMissingFiles;
+
+
+For v_LatestPeriodsCount = -($(v_ReloadNLastMonths)-1) to 0 step 1
+
+  Let v_YearMonth = Date(AddMonths(Today(1),$(v_LatestPeriodsCount)),'YYYYMM');
+  RETURNGROUP:
+  Load *;
+  SQL
+  Select
+  sigr.*
+  FROM [BI_DW].[bridge].[vw_ServiceItem_GlobalReturnRootSubgroup]  sigr
+  join [BI_DW].fact.ServiceItemADL si on si.id = sigr.[ServiceItem Id]
+  join [BI_DW].dim.date date on date.DATE_ID = si.[Service Shipment Date Id]
+
+  Where date.Year_Month = $(v_YearMonth);
+
+  STORE  RETURNGROUP into '$(v_Dir)/RETURNGROUP_$(v_YearMonth).qvd' (qvd);
+
+  Call DataQualityLog('RETURNGROUP','RETURNGROUP_$(v_YearMonth)','Id');
+  Drop Table RETURNGROUP;
+  
+Next v_LatestPeriodsCount;
+
+Let v_Dir = 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/REPORTEDSYMPTOM';
+Let v_LoadLastYearMonth = Date(AddMonths(Today(1),-$(v_ReloadNLastMonths)),'YYYYMM');
+
+Call GetMissingFiles('$(v_Dir)','RETURNGROUP','$(v_LoadInitialYearMonth)','$(v_LoadLastYearMonth)','YYYYMM');
+
+For Each v_YearMonthMissing in FieldValueList('GetMissingFiles')
+
+  SYMPTOMS_SERVICEID:
+  Load *;
+  SQL
+  Select 
+  sigr.*
+  FROM [BI_DW].[bridge].[ServiceItem_GlobalReturn] sigr
+  join [BI_DW].fact.ServiceItemADL si on si.id = sigr.[ServiceItem Id]
+  join [BI_DW].dim.date date on date.DATE_ID = si.[Service Shipment Date Id]
+
+  Where date.Year_Month = $(v_YearMonthMissing);
+
+  Store SYMPTOMS_SERVICEID into '$(v_Dir)/REPORTEDSYMPTOM_$(v_YearMonthMissing).qvd' (qvd);
+
+  Call DataQualityLog('SYMPTOMS_SERVICEID','REPORTEDSYMPTOM_$(v_YearMonthMissing)','Id');
+  Drop Table SYMPTOMS_SERVICEID;
+
+Next v_YearMonthMissing;
+
+Drop Table GetMissingFiles;
+
+
+For v_LatestPeriodsCount = -($(v_ReloadNLastMonths)-1) to 0 step 1
+
+  Let v_YearMonth = Date(AddMonths(Today(1),$(v_LatestPeriodsCount)),'YYYYMM');
+  SYMPTOMS_SERVICEID:
+  Load *;
+  SQL
+  Select 
+  sigr.*
+  FROM [BI_DW].[bridge].[ServiceItem_GlobalReturn] sigr
+  join [BI_DW].fact.ServiceItemADL si on si.id = sigr.[ServiceItem Id]
+  join [BI_DW].dim.date date on date.DATE_ID = si.[Service Shipment Date Id]
+
+  Where date.Year_Month = $(v_YearMonth);
+
+  Store SYMPTOMS_SERVICEID into '$(v_Dir)/REPORTEDSYMPTOM_$(v_YearMonth).qvd' (qvd);
+
+  Call DataQualityLog('SYMPTOMS_SERVICEID','REPORTEDSYMPTOM_$(v_YearMonth)','Id');
+  Drop Table SYMPTOMS_SERVICEID;
+
+Next v_LatestPeriodsCount;
+
+Let v_Dir = 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/DATEID';
+
+Let v_LoadLastYear = Year(Today(1))-1;
+
+Call GetMissingFiles('$(v_Dir)','DATEID','$(v_LoadInitialYear)','$(v_LoadLastYear)','YYYY');
+
+For Each v_YearMissing in FieldValueList('GetMissingFiles')
+
+  DATEID:
+  Load *;
+  SQL
+  Select * 
+  from bi_dw.dim.date
+  where Year = $(v_YearMonthMissing)
+  ;
+  Store DATEID into '$(v_Dir)/DATEID_$(v_YearMissing).qvd' (qvd);
+
+  Call DataQualityLog('DATEID','DATEID_$(v_YearMissing)','DATE_ID');
+  
+  Drop Table DATEID;
+
+Next v_YearMissing;
+
+Drop Table GetMissingFiles;
+
+Let v_ThisYear = Year(Today(1));
+
+DATEID:
+Load *;
+SQL
+Select * 
+from bi_dw.dim.date
+where Year = $(v_ThisYear)
+;
+Store DATEID into '$(v_Dir)/DATEID_$(v_ThisYear).qvd' (qvd);
+
+Call DataQualityLog('DATEID','DATEID_$(v_ThisYear)','DATE_ID');
+
+Drop Table DATEID;
+
+Let v_Dir = 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/INSNMAP';
+Let v_LoadLastYearMonth = Date(AddMonths(Today(1),-$(v_ReloadNLastMonths)),'YYYYMM');
+
+Call GetMissingFiles('$(v_Dir)','INSNMAP','$(v_LoadInitialYearMonth)','$(v_LoadLastYearMonth)','YYYYMM');
+
+For Each v_YearMonthMissing in FieldValueList('GetMissingFiles')
+
+  INSNMAP:
+  Load *;
+  SQL
+  SELECT 
+  concat(si.[DataSourceId],'|',si.[UpdateTimestamp]) as InSNKey
+  ,si.[In Serial No_]
+  FROM [BI_DW].[fact].[ServiceItem] si join [BI_DW].dim.date date on date.DATE_ID = si.[Service Shipment Date Id]
+
+  where si.[In Serial No_] <>''
+  and date.Year_Month = $(v_YearMonthMissing);
+
+  STORE  INSNMAP into '$(v_Dir)/INSNMAP_$(v_YearMonthMissing).qvd' (qvd);
+
+  Call DataQualityLog('INSNMAP','INSNMAP_$(v_YearMonthMissing)','InSNKey');
+  Drop Table INSNMAP;
+
+Next v_YearMonthMissing;
+
+Drop Table GetMissingFiles;
+
+
+For v_LatestPeriodsCount = -($(v_ReloadNLastMonths)-1) to 0 step 1
+
+  Let v_YearMonth = Date(AddMonths(Today(1),$(v_LatestPeriodsCount)),'YYYYMM');
+  INSNMAP:
+  Load *;
+  SQL
+  SELECT 
+  concat(si.[DataSourceId],'|',si.[UpdateTimestamp]) as InSNKey
+  ,si.[In Serial No_]
+  FROM [BI_DW].[fact].[ServiceItem] si join [BI_DW].dim.date date on date.DATE_ID = si.[Service Shipment Date Id]
+
+  where si.[In Serial No_] <>''
+  and date.Year_Month = $(v_YearMonth);
+
+  STORE  INSNMAP into '$(v_Dir)/INSNMAP_$(v_YearMonth).qvd' (qvd);
+
+  Call DataQualityLog('INSNMAP','INSNMAP_$(v_YearMonth)','InSNKey');
+  Drop Table INSNMAP;
+  
+Next v_LatestPeriodsCount;
+
+
+Let v_LoadLastYearMonth = Date(AddMonths(Today(1),-$(v_ReloadNLastMonths)),'YYYYMM');
+
+For each v_ServiceItemType in 'NSL','RFS','RFC'
+	
+  Let v_ServiceItemTypeSQL = if('$(v_ServiceItemType)' = 'NSL','(0)',If('$(v_ServiceItemType)'='RFS','(1,2)','(4,101)'));
+  Let v_DateType = if('$(v_ServiceItemType)' = 'NSL', '[Sales Shipment Date id]','[Service Shipment Date id]');
+
+  Let v_Dir = 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/SERVICEITEM/SERVICEITEM_$(v_ServiceItemType)';
+
+  Call GetMissingFiles('$(v_Dir)','SERVICEITEM_$(v_ServiceItemType)','$(v_LoadInitialYearMonth)','$(v_LoadLastYearMonth)','YYYYMM');
+
+  For Each v_YearMonthMissing in FieldValueList('GetMissingFiles')
+
+    SERVICEITEM_$(v_ServiceItemType):
+    Load *;
+    SQL
+    Select 
+    si.* 
+    from bi_dw.fact.ServiceItemADL si join bi_dw.dim.date date 
+    on date.date_id = si.$(v_DateType)
+    where date.Year_Month = $(v_YearMonthMissing)
+    and si.[serviceitemtype id] in $(v_ServiceItemTypeSQL);
+
+    STORE  SERVICEITEM_$(v_ServiceItemType) into '$(v_Dir)/SERVICEITEM_$(v_ServiceItemType)_$(v_YearMonthMissing).qvd' (qvd);
+
+    Call DataQualityLog('SERVICEITEM_$(v_ServiceItemType)','SERVICEITEM_$(v_ServiceItemType)_$(v_YearMonthMissing)','UpdateTimestamp');
+    Drop Table SERVICEITEM_$(v_ServiceItemType);
+
+  Next v_YearMonthMissing;
+
+  Drop Table GetMissingFiles;
+
+
+  For v_LatestPeriodsCount = -($(v_ReloadNLastMonths)-1) to 0 step 1
+
+  Let v_YearMonth = Date(AddMonths(Today(1),$(v_LatestPeriodsCount)),'YYYYMM');
+    SERVICEITEM_$(v_ServiceItemType):
+    Load *;
+    SQL
+    Select 
+    si.* 
+    from bi_dw.fact.ServiceItemADL si join bi_dw.dim.date date 
+    on date.date_id = si.$(v_DateType)
+    where date.Year_Month = $(v_YearMonth)
+    and si.[serviceitemtype id] in $(v_ServiceItemTypeSQL);
+
+    STORE  SERVICEITEM_$(v_ServiceItemType) into '$(v_Dir)/SERVICEITEM_$(v_ServiceItemType)_$(v_YearMonth).qvd' (qvd);
+
+    Call DataQualityLog('SERVICEITEM_$(v_ServiceItemType)','SERVICEITEM_$(v_ServiceItemType)_$(v_YearMonth)','UpdateTimestamp');
+    Drop Table SERVICEITEM_$(v_ServiceItemType);
+
+  Next v_LatestPeriodsCount;
+  
+Next v_ServiceItemType;
+
+
+Let v_Dir = 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/ITEM';
+
+TEMP_DSID:
+Load DATASOURCEID;
+SQL 
+Select distinct DATASOURCEID
+from bi_dw.dim.item
+where datasourceid <> '';
+
+For each v_DSID in FieldValueList('DATASOURCEID')
+
+  If isnull(QvdCreateTime('$(v_Dir)/ITEM_$(v_DSID).qvd')) then //qvd does not exist
+
+    ITEM:
+    Load *;
+    SQL
+    Select * 
+    from bi_dw.dim.item
+    where DatasourceId = $(v_DSID)
+    ;
+    Store ITEM into '$(v_Dir)/ITEM_$(v_DSID).qvd' (qvd);
+    Call DataQualityLog('ITEM','ITEM_$(v_DSID)','UpdateTimestamp');
+
+    drop table ITEM;
+
+  Else
+
+    ITEM:
+    Load *
+    from '$(v_Dir)/ITEM_$(v_DSID).qvd' (qvd);
+
+    TEMP_MAXUTS:
+    Load
+    Max(UpdateTimestamp) as UpdateTimestamp
+    resident ITEM;
+
+    Let v_MaxUpdateTimestamp = Peek('UpdateTimestamp',-1,'TEMP_MAXUTS');
+
+    drop table TEMP_MAXUTS;
+
+    Concatenate (ITEM)
+    Load *;
+    SQL
+    Select * 
+    from bi_dw.dim.item
+    where DatasourceId = $(v_DSID)
+    and UpdateTimestamp > '$(v_MaxUpdateTimestamp)';
+
+    Store ITEM into '$(v_Dir)/ITEM_$(v_DSID).qvd' (qvd);
+    Call DataQualityLog('ITEM','ITEM_$(v_DSID)','UpdateTimestamp');
+
+    drop table ITEM;
+
+  End If;
+
+
+Next v_DSID;
+
+Drop Table TEMP_DSID;
+
+//Get R3 itemId
+TEMP_R3ITEMID:
+Load
+Id as [Item Id]
+
+from 'lib://GOP_QVD/01_DEV/01_EXTRACT/ITEM/ITEM_DSID_39.qvd' (qvd)
+
+where No_ = 'R3';
+
+Let v_R3Id = Peek('Item Id',-1,'TEMP_R3ITEMID');
+
+Drop Table TEMP_R3ITEMID;
+
+Let v_Dir = 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/R3';
+Let v_LoadLastYear = Year(Today(1))-1;
+
+Call GetMissingFiles('$(v_Dir)','DATEID','$(v_LoadInitialYear)','$(v_LoadLastYear)','YYYY');
+
+For Each v_YearMissing in FieldValueList('GetMissingFiles')
+
+  R3MODELMAP:
+  Load 
+  *;
+  SQL
+  Select
+  distinct
+  SNs.[Serial No_]
+  ,item.id
+
+  from 
+  (
+
+  select distinct
+  sshl.[In Serial No_] as 'Serial No_' 
+  ,sshl.[Shortcut Dimension 2 Code]
+  from BI_StagingArea.dbo.[NAV_SalesShipmentLine] sshl 
+
+  where 
+
+  sshl.[In Serial No_] in (select si.[Serial No_] from [BI_DW].[fact].[ServiceItem] si where si.[Item id] = $(v_R3Id))
+  and sshl.DataSourceId = 39
+  and sshl.[In Serial No_] <> '' 
+  and year(sshl.[Shipment Date]) = $(v_YearMissing)
+
+
+  Union
+
+  select distinct
+  sshl.[Out Serial No_] as 'Serial No_' 
+  ,sshl.[Shortcut Dimension 2 Code]
+  from BI_StagingArea.dbo.[NAV_SalesShipmentLine] sshl 
+
+  where 
+
+  sshl.[Out Serial No_] in (select si.[Serial No_] from [BI_DW].[fact].[ServiceItem] si where si.[Item id] = $(v_R3Id))
+  and sshl.DataSourceId = 39
+  and sshl.[In Serial No_] <> '' 
+  and year(sshl.[Shipment Date]) = $(v_YearMissing)
+  Union
+
+  select distinct
+  sshl.[In Serial No_] as 'Serial No_' 
+  ,sshl.[Shortcut Dimension 2 Code]
+  from BI_StagingArea.dbo.[NAV_SalesShipmentLine] sshl 
+
+  where 
+
+  sshl.No_ = 'R3'
+  and sshl.DataSourceId = 39
+  and sshl.[In Serial No_] <> '' 
+  and year(sshl.[Shipment Date]) = $(v_YearMissing)
+
+  ) as SNs 
+
+  join BI_DW.dim.item item on SNs.[Shortcut Dimension 2 Code] = item.[Global Dimension 2 Code] 
+  where item.datasourceid = 61
+  and item.[PRODUCT GROUP CODE] = 'GNR CUSTOM IN-SHELL';
+
+  Store R3MODELMAP Into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/R3/R3_$(v_YearMissing).qvd' (qvd);
+  Call DataQualityLog('R3MODELMAP','R3_$(v_YearMissing)','id');
+
+
+  drop table R3MODELMAP;
+
+Next v_YearMissing;
+
+Let v_ThisYear = Year(Today(1));
+R3MODELMAP:
+Load 
+*;
+SQL
+Select
+distinct
+SNs.[Serial No_]
+,item.id
+
+from 
+(
+
+select distinct
+sshl.[In Serial No_] as 'Serial No_' 
+,sshl.[Shortcut Dimension 2 Code]
+from BI_StagingArea.dbo.[NAV_SalesShipmentLine] sshl 
+
+where 
+
+sshl.[In Serial No_] in (select si.[Serial No_] from [BI_DW].[fact].[ServiceItem] si where si.[Item id] = $(v_R3Id))
+and sshl.DataSourceId = 39
+and sshl.[In Serial No_] <> '' 
+and year(sshl.[Shipment Date]) = $(v_ThisYear)
+
+
+Union
+
+select distinct
+sshl.[Out Serial No_] as 'Serial No_' 
+,sshl.[Shortcut Dimension 2 Code]
+from BI_StagingArea.dbo.[NAV_SalesShipmentLine] sshl 
+
+where 
+
+sshl.[Out Serial No_] in (select si.[Serial No_] from [BI_DW].[fact].[ServiceItem] si where si.[Item id] = $(v_R3Id))
+and sshl.DataSourceId = 39
+and sshl.[In Serial No_] <> '' 
+and year(sshl.[Shipment Date]) = $(v_ThisYear)
+Union
+
+select distinct
+sshl.[In Serial No_] as 'Serial No_' 
+,sshl.[Shortcut Dimension 2 Code]
+from BI_StagingArea.dbo.[NAV_SalesShipmentLine] sshl 
+
+where 
+
+sshl.No_ = 'R3'
+and sshl.DataSourceId = 39
+and sshl.[In Serial No_] <> '' 
+and year(sshl.[Shipment Date]) = $(v_ThisYear)
+
+) as SNs 
+
+join BI_DW.dim.item item on SNs.[Shortcut Dimension 2 Code] = item.[Global Dimension 2 Code] 
+where item.datasourceid = 61
+and item.[PRODUCT GROUP CODE] = 'GNR CUSTOM IN-SHELL';
+
+Store R3MODELMAP Into 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/R3/R3_$(v_ThisYear).qvd' (qvd);
+Call DataQualityLog('R3MODELMAP','R3_$(v_ThisYear)','id');
+
+Let v_Dir = 'lib://GOP_QVD/$(v_Environment)/01_EXTRACT/CUSTOMER';
+
+TEMP_DSID:
+Load DATASOURCEID;
+SQL 
+Select distinct DATASOURCEID
+from bi_dw.dim.Customer
+where datasourceid <> '';
+
+For each v_DSID in FieldValueList('DATASOURCEID')
+
+  If isnull(QvdCreateTime('$(v_Dir)/CUSTOMER_$(v_DSID).qvd')) then //qvd does not exist
+
+    CUSTOMER:
+    Load *;
+    SQL
+    Select * 
+    from bi_dw.dim.Customer
+    where DatasourceId = $(v_DSID)
+    ;
+    Store CUSTOMER into '$(v_Dir)/CUSTOMER_$(v_DSID).qvd' (qvd);
+    Call DataQualityLog('CUSTOMER','CUSTOMER_$(v_DSID)','UpdateTimestamp');
+
+    drop table CUSTOMER;
+
+  Else
+
+    CUSTOMER:
+    Load *
+    from '$(v_Dir)/CUSTOMER_$(v_DSID).qvd' (qvd);
+
+    TEMP_MAXUTS:
+    Load
+    Max(UpdateTimestamp) as UpdateTimestamp
+    resident CUSTOMER;
+
+    Let v_MaxUpdateTimestamp = Peek('UpdateTimestamp',-1,'TEMP_MAXUTS');
+
+    drop table TEMP_MAXUTS;
+
+    Concatenate (CUSTOMER)
+    Load *;
+    SQL
+    Select * 
+    from bi_dw.dim.Customer
+    where DatasourceId = $(v_DSID)
+    and UpdateTimestamp > '$(v_MaxUpdateTimestamp)';
+
+    Store CUSTOMER into '$(v_Dir)/CUSTOMER_$(v_DSID).qvd' (qvd);
+    Call DataQualityLog('CUSTOMER','CUSTOMER_$(v_DSID)','UpdateTimestamp');
+
+    drop table CUSTOMER;
+
+  End If;
+
+
+Next v_DSID;
+
+Drop Table TEMP_DSID;
